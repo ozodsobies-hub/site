@@ -174,9 +174,17 @@ function KeysTab(){
     const d = await api.post('keys/open',{case_id:kase.id},api.authH(getToken()))
     setBusy(false)
     if(d.error){toast.error(d.error);return}
-    setOpening({case:kase,items:kase.items,winner:d.reward})
+    // items ni kase.items dan olamiz (backend JSON parse qilib beradi)
+    const items = Array.isArray(kase.items) ? kase.items : []
+    setOpening({case:kase, items, winner:d.reward})
   }
-  const finish=()=>{ toast.success(`Tabriklaymiz! ${opening.winner.label}`); load(); setOpening(null) }
+  const finish = winner => {
+    // onComplete chaqirilganda faqat toast ko'rsatamiz, yopmAYmiz
+    // Foydalanuvchi o'zi "Yopish" tugmasini bosadi
+    toast.success(`🎉 Tabriklaymiz! Siz yutdingiz: ${winner?.label||'Mukofot'}`)
+    load() // Kalit sonini yangilaymiz
+  }
+  const closeOpening = () => setOpening(null)
 
   const keyMap={}; data?.keys?.forEach(k=>keyMap[k.key_type]=k.cnt)
   const caseColors={oddiy:'var(--td)',oltin:'var(--gold)',pul:'var(--green)',exp:'var(--blue)',mashina:'var(--pl)',avia:'var(--red)'}
