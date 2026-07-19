@@ -164,27 +164,52 @@ function KeysTab(){
   const {getToken}=useAuth()
   const [data,setData]=useState(null)
   const [loading,setLoading]=useState(true)
-  const [opening,setOpening]=useState(null)
+  const [opening,setOpening]=useState(null)   // {case, items, winner}
   const [busy,setBusy]=useState(false)
-  const load=()=>api.get('keys',{},api.authH(getToken())).then(d=>{setData(d);setLoading(false)})
+  const [revealed,setRevealed]=useState(false) // g'olib ko'ringanmi
+
+  const load=()=>{
+    setLoading(true)
+    api.get('keys',{},api.authH(getToken())).then(d=>{
+      if(d.success){
+        // items ni parse qilamiz (backend JSON string yuborsa ham, array bo'lsa ham)
+        if(d.cases) d.cases.forEach(c=>{
+          if(typeof c.items==='string'){try{c.items=JSON.parse(c.items)}catch{c.items=[]}}
+          if(!Array.isArray(c.items))c.items=[]
+        })
+        setData(d)
+      }
+      setLoading(false)
+    })
+  }
   useEffect(()=>{load()},[])
 
   const openCase = async kase => {
+    if(busy) return
     setBusy(true)
+    setRevealed(false)
+    const items = Array.isArray(kase.items) ? kase.items : []
+    if(items.length===0){toast.error('Keys ma\'lumotlari yuklanmagan, sahifani yangilang');setBusy(false);return}
     const d = await api.post('keys/open',{case_id:kase.id},api.authH(getToken()))
     setBusy(false)
     if(d.error){toast.error(d.error);return}
-    // items ni kase.items dan olamiz (backend JSON parse qilib beradi)
-    const items = Array.isArray(kase.items) ? kase.items : []
-    setOpening({case:kase, items, winner:d.reward})
+    // winner ham items dan tanlangan bo'lishi kerak
+    const winner = d.reward || items[items.length-1]
+    setOpening({case:kase, items, winner})
   }
-  const finish = winner => {
-    // onComplete chaqirilganda faqat toast ko'rsatamiz, yopmAYmiz
-    // Foydalanuvchi o'zi "Yopish" tugmasini bosadi
-    toast.success(`🎉 Tabriklaymiz! Siz yutdingiz: ${winner?.label||'Mukofot'}`)
-    load() // Kalit sonini yangilaymiz
+
+  // CaseOpening animatsiya tugagach chaqiriladi — faqat toast, YOPMAYDI
+  const onAnimationComplete = (winner) => {
+    setRevealed(true)
+    toast.success(`🎉 ${winner?.label||'Mukofot'} yutdingiz!`)
+    load() // kalit sonini yangilaymiz
   }
-  const closeOpening = () => setOpening(null)
+
+  // Foydalanuvchi o'zi yopadi
+  const closeCase = () => {
+    setOpening(null)
+    setRevealed(false)
+  }
 
   const keyMap={}; data?.keys?.forEach(k=>keyMap[k.key_type]=k.cnt)
   const caseColors={oddiy:'var(--td)',oltin:'var(--gold)',pul:'var(--green)',exp:'var(--blue)',mashina:'var(--pl)',avia:'var(--red)'}
@@ -192,46 +217,97 @@ function KeysTab(){
   const rarityC={common:'#9CA3AF',uncommon:'#22C55E',rare:'#3B82F6',epic:'#A855F7',legendary:'#F59E0B'}
 
   if(loading) return <div className="loading"><div className="spin"></div></div>
+
   return (
     <div>
+      {/* ANIMATSIYA OYNASI */}
       {opening && (
-        <div className="card" style={{marginBottom:24,padding:'32px 20px',textAlign:'center'}}>
-          <h3 style={{fontWeight:800,fontSize:18,marginBottom:20}}>{opening.case.name} ochilmoqda...</h3>
-          <CaseOpening items={opening.items} winner={opening.winner} onComplete={finish}/>
-          <button className="btn btn-outline btn-sm" onClick={()=>setOpening(null)} style={{marginTop:20}}>Yopish</button>
+        <div className="card" style={{marginBottom:24,padding:'28px 20px',textAlign:'center',background:'linear-gradient(135deg,rgba(124,58,237,.08),rgba(76,29,149,.04))'}}>
+          <h3 style={{fontWeight:800,fontSize:18,marginBottom:6}}>{opening.case.name}</h3>
+          <p style={{fontSize:12,color:'var(--td)',marginBottom:20}}>Animatsiya tugashini kuting...</p>
+          <CaseOpening
+            key={opening.case.id + '-' + Date.now()}
+            items={opening.items}
+            winner={opening.winner}
+            onComplete={onAnimationComplete}
+          />
+          {revealed && (
+            <button
+              className="btn btn-primary"
+              onClick={closeCase}
+              style={{marginTop:20,borderRadius:10,padding:'10px 28px'}}
+            >
+              <Icon name="check" size={16}/>Yaxshi!
+            </button>
+          )}
+          {!revealed && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={closeCase}
+              style={{marginTop:20,borderRadius:8}}
+            >
+              Bekor qilish
+            </button>
+          )}
         </div>
       )}
-      {/* Kalit soni */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:12,marginBottom:24}}>
+
+      {/* KALIT SONI */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:10,marginBottom:24}}>
         {[{type:'oddiy',label:'Oddiy'},{type:'oltin',label:'Oltin'},{type:'pul',label:'Pul'},{type:'exp',label:'EXP'},{type:'mashina',label:'Mashina'},{type:'avia',label:'Aviatsiya'}].map(k=>(
-          <div key={k.type} className="card" style={{textAlign:'center',padding:16,borderColor:`${caseColors[k.type]}33`}}>
-            <Icon name={caseIcons[k.type]} size={22} color={caseColors[k.type]}/>
-            <div style={{fontSize:24,fontWeight:900,color:caseColors[k.type],margin:'8px 0 2px'}}>{keyMap[k.type]||0}</div>
+          <div key={k.type} className="card" style={{textAlign:'center',padding:14,borderColor:`${caseColors[k.type]}33`}}>
+            <Icon name={caseIcons[k.type]} size={20} color={caseColors[k.type]}/>
+            <div style={{fontSize:22,fontWeight:900,color:caseColors[k.type],margin:'6px 0 2px'}}>{keyMap[k.type]||0}</div>
             <div style={{fontSize:11,color:'var(--td)'}}>{k.label}</div>
           </div>
         ))}
       </div>
-      {/* Case-lar */}
+
+      {/* CASE-LAR */}
       <div className="grid2">
-        {data?.cases?.map(c=>(
-          <div key={c.id} className="card" style={{borderLeft:`3px solid ${caseColors[c.type]||'var(--b)'}`}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-              <Icon name={caseIcons[c.type]||'gift'} size={20} color={caseColors[c.type]||'var(--pl)'}/>
-              <div style={{fontWeight:700,fontSize:15}}>{c.name}</div>
+        {data?.cases?.map(c=>{
+          const count = keyMap[c.type]||0
+          const items = Array.isArray(c.items)?c.items:[]
+          return (
+            <div key={c.id} className="card" style={{borderLeft:`3px solid ${caseColors[c.type]||'var(--b)'}`}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                <Icon name={caseIcons[c.type]||'gift'} size={20} color={caseColors[c.type]||'var(--pl)'}/>
+                <div style={{fontWeight:700,fontSize:15}}>{c.name}</div>
+              </div>
+              <p style={{fontSize:12,color:'var(--td)',marginBottom:12}}>{c.description}</p>
+
+              {/* Mukofotlar ro'yxati */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:4,marginBottom:14}}>
+                {items.map((it,i)=>(
+                  <span key={i} style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:12,border:`1px solid ${rarityC[it.rarity]||'#9CA3AF'}55`,color:rarityC[it.rarity]||'#9CA3AF',background:`${rarityC[it.rarity]||'#9CA3AF'}10`}}>
+                    {it.label||it.type} {it.chance}%
+                  </span>
+                ))}
+              </div>
+
+              <button
+                className="btn btn-primary btn-sm"
+                style={{width:'100%',justifyContent:'center',borderRadius:8,
+                  background: count > 0 ? undefined : 'rgba(124,58,237,.05)',
+                  opacity: count > 0 ? 1 : 0.5
+                }}
+                disabled={busy || count === 0 || !!opening}
+                onClick={()=>openCase(c)}
+              >
+                {busy && opening?.case?.id===c.id
+                  ? <div className="spin"></div>
+                  : count > 0
+                    ? <><Icon name="key" size={14}/>{count} ta kalit bor — Ochish</>
+                    : `${c.name} yo'q`
+                }
+              </button>
             </div>
-            <p style={{fontSize:12,color:'var(--td)',marginBottom:12}}>{c.description}</p>
-            <div style={{display:'flex',flexWrap:'wrap',gap:5,marginBottom:14}}>
-              {c.items?.map((it,i)=>(
-                <span key={i} style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:12,border:`1px solid ${rarityC[it.rarity]||'#9CA3AF'}44`,color:rarityC[it.rarity]||'#9CA3AF',background:`${rarityC[it.rarity]||'#9CA3AF'}11`}}>{it.label}</span>
-              ))}
-            </div>
-            <button className="btn btn-primary btn-sm" style={{width:'100%',justifyContent:'center',borderRadius:8,background:keyMap[c.type]>0?undefined:'rgba(124,58,237,.1)'}} disabled={busy||!keyMap[c.type]} onClick={()=>openCase(c)}>
-              {busy?<div className="spin"></div>:keyMap[c.type]?<><Icon name="key" size={14}/>Ochish ({keyMap[c.type]} ta)</>:`${c.name} yo'q`}
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
-      <p style={{textAlign:'center',fontSize:12,color:'var(--td)',marginTop:20}}>💡 90 daqiqa o'ynasangiz = 1 Oddiy kalit | 3 soat = 1 Oltin kalit</p>
+      <p style={{textAlign:'center',fontSize:12,color:'var(--td)',marginTop:20}}>
+        💡 90 daqiqa o'ynasangiz = 1 Oddiy kalit | 3 soat = 1 Oltin kalit
+      </p>
     </div>
   )
 }
